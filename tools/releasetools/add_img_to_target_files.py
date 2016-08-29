@@ -22,15 +22,18 @@ add them to the zipfile.
 Usage:  add_img_to_target_files target_files
 """
 
+from __future__ import print_function
+
 import sys
 
 if sys.hexversion < 0x02070000:
-  print >> sys.stderr, "Python 2.7 or newer is required."
+  print("Python 2.7 or newer is required.", file=sys.stderr)
   sys.exit(1)
 
 import datetime
 import errno
 import os
+import shutil
 import tempfile
 import zipfile
 
@@ -51,7 +54,7 @@ def AddSystem(output_zip, prefix="IMAGES/", recovery_img=None, boot_img=None):
 
   prebuilt_path = os.path.join(OPTIONS.input_tmp, prefix, "system.img")
   if os.path.exists(prebuilt_path):
-    print "system.img already exists in %s, no need to rebuild..." % (prefix,)
+    print("system.img already exists in %s, no need to rebuild..." % prefix)
     return
 
   def output_sink(fn, data):
@@ -60,7 +63,7 @@ def AddSystem(output_zip, prefix="IMAGES/", recovery_img=None, boot_img=None):
     ofile.close()
 
   if OPTIONS.rebuild_recovery:
-    print "Building new recovery patch"
+    print("Building new recovery patch")
     common.MakeRecoveryPatch(OPTIONS.input_tmp, output_sink, recovery_img,
                              boot_img, info_dict=OPTIONS.info_dict)
 
@@ -83,7 +86,7 @@ def AddVendor(output_zip, prefix="IMAGES/"):
 
   prebuilt_path = os.path.join(OPTIONS.input_tmp, prefix, "vendor.img")
   if os.path.exists(prebuilt_path):
-    print "vendor.img already exists in %s, no need to rebuild..." % (prefix,)
+    print("vendor.img already exists in %s, no need to rebuild..." % prefix)
     return
 
   block_list = common.MakeTempFile(prefix="vendor-blocklist-", suffix=".map")
@@ -104,7 +107,7 @@ def AddOem(output_zip, prefix="IMAGES/"):
 
   prebuilt_path = os.path.join(OPTIONS.input_tmp, prefix, "oem.img")
   if os.path.exists(prebuilt_path):
-    print("oem.img already exists in %s, no need to rebuild..." % prefix)
+    print("oem.img already exists in %s, no need to rebuild..." % (prefix,))
     return
 
   block_list = common.MakeTempFile(prefix="oem-blocklist-", suffix=".map")
@@ -123,7 +126,7 @@ def BuildOem(input_dir, info_dict, block_list=None):
 
 
 def CreateImage(input_dir, info_dict, what, block_list=None):
-  print "creating " + what + ".img..."
+  print("creating " + what + ".img...")
 
   img = common.MakeTempFile(prefix=what + "-", suffix=".img")
 
@@ -162,21 +165,11 @@ def CreateImage(input_dir, info_dict, what, block_list=None):
   if not os.path.exists(fs_config):
     fs_config = None
 
-  fc_config = os.path.join(input_dir, "BOOT/RAMDISK/file_contexts")
-  if not os.path.exists(fc_config):
-    fc_config = None
-
   # Override values loaded from info_dict.
   if fs_config:
     image_props["fs_config"] = fs_config
-  if fc_config:
-    image_props["selinux_fc"] = fc_config
   if block_list:
     image_props["block_list"] = block_list
-  if image_props.get("system_root_image") == "true":
-    image_props["ramdisk_dir"] = os.path.join(input_dir, "BOOT/RAMDISK")
-    image_props["ramdisk_fs_config"] = os.path.join(
-        input_dir, "META/boot_filesystem_config.txt")
 
   succ = build_image.BuildImage(os.path.join(input_dir, what),
                                 image_props, img)
@@ -186,22 +179,27 @@ def CreateImage(input_dir, info_dict, what, block_list=None):
 
 
 def AddUserdata(output_zip, prefix="IMAGES/"):
-  """Create an empty userdata image and store it in output_zip."""
+  """Create a userdata image and store it in output_zip.
+
+  In most case we just create and store an empty userdata.img;
+  But the invoker can also request to create userdata.img with real
+  data from the target files, by setting "userdata_img_with_data=true"
+  in OPTIONS.info_dict.
+  """
 
   prebuilt_path = os.path.join(OPTIONS.input_tmp, prefix, "userdata.img")
   if os.path.exists(prebuilt_path):
-    print "userdata.img already exists in %s, no need to rebuild..." % (prefix,)
+    print("userdata.img already exists in %s, no need to rebuild..." % prefix)
     return
 
-  image_props = build_image.ImagePropFromGlobalDict(OPTIONS.info_dict,
-                                                    "data")
+  image_props = build_image.ImagePropFromGlobalDict(OPTIONS.info_dict, "data")
   # We only allow yaffs to have a 0/missing partition_size.
   # Extfs, f2fs must have a size. Skip userdata.img if no size.
   if (not image_props.get("fs_type", "").startswith("yaffs") and
       not image_props.get("partition_size")):
     return
 
-  print "creating userdata.img..."
+  print("creating userdata.img...")
 
   # Use a fixed timestamp (01/01/2009) when packaging the image.
   # Bug: 24377993
@@ -211,10 +209,19 @@ def AddUserdata(output_zip, prefix="IMAGES/"):
 
   # The name of the directory it is making an image out of matters to
   # mkyaffs2image.  So we create a temp dir, and within it we create an
-  # empty dir named "data", and build the image from that.
+  # empty dir named "data", or a symlink to the DATA dir,
+  # and build the image from that.
   temp_dir = tempfile.mkdtemp()
   user_dir = os.path.join(temp_dir, "data")
-  os.mkdir(user_dir)
+  empty = (OPTIONS.info_dict.get("userdata_img_with_data") != "true")
+  if empty:
+    # Create an empty dir.
+    os.mkdir(user_dir)
+  else:
+    # Symlink to the DATA dir.
+    os.symlink(os.path.join(OPTIONS.input_tmp, "DATA"),
+               user_dir)
+
   img = tempfile.NamedTemporaryFile()
 
   fstab = OPTIONS.info_dict["fstab"]
@@ -226,23 +233,33 @@ def AddUserdata(output_zip, prefix="IMAGES/"):
   common.CheckSize(img.name, "userdata.img", OPTIONS.info_dict)
   common.ZipWrite(output_zip, img.name, prefix + "userdata.img")
   img.close()
-  os.rmdir(user_dir)
-  os.rmdir(temp_dir)
+  shutil.rmtree(temp_dir)
 
 
-def AddUserdataExtra(output_zip):
+def AddUserdataExtra(output_zip, prefix="IMAGES/"):
   """Create extra userdata image and store it in output_zip."""
 
   image_props = build_image.ImagePropFromGlobalDict(OPTIONS.info_dict,
                                                   "data_extra")
-  # If no userdataextra_size is provided for extfs, skip userdata_extra.img.
-  if (image_props.get("fs_type", "").startswith("ext") and
-      not image_props.get("partition_size")):
+
+  # The build system has to explicitly request extra userdata.
+  if "fs_type" not in image_props:
     return
 
   extra_name = image_props.get("partition_name", "extra")
 
-  print "creating userdata_%s.img..." % extra_name
+  prebuilt_path = os.path.join(OPTIONS.input_tmp, prefix, "userdata_%s.img" % extra_name)
+  if os.path.exists(prebuilt_path):
+    print("userdata_%s.img already exists in %s, no need to rebuild..." % (extra_name, prefix,))
+    return
+
+  # We only allow yaffs to have a 0/missing partition_size.
+  # Extfs, f2fs must have a size. Skip userdata_extra.img if no size.
+  if (not image_props.get("fs_type", "").startswith("yaffs") and
+      not image_props.get("partition_size")):
+    return
+
+  print("creating userdata_%s.img..." % extra_name)
 
   # The name of the directory it is making an image out of matters to
   # mkyaffs2image.  So we create a temp dir, and within it we create an
@@ -260,7 +277,7 @@ def AddUserdataExtra(output_zip):
 
   # Disable size check since this fetches original data partition size
   #common.CheckSize(img.name, "userdata_extra.img", OPTIONS.info_dict)
-  output_zip.write(img.name, "userdata_%s.img" % extra_name)
+  output_zip.write(img.name, prefix + "userdata_%s.img" % extra_name)
   img.close()
   os.rmdir(user_dir)
   os.rmdir(temp_dir)
@@ -271,16 +288,15 @@ def AddCache(output_zip, prefix="IMAGES/"):
 
   prebuilt_path = os.path.join(OPTIONS.input_tmp, prefix, "cache.img")
   if os.path.exists(prebuilt_path):
-    print "cache.img already exists in %s, no need to rebuild..." % (prefix,)
+    print("cache.img already exists in %s, no need to rebuild..." % prefix)
     return
 
-  image_props = build_image.ImagePropFromGlobalDict(OPTIONS.info_dict,
-                                                    "cache")
+  image_props = build_image.ImagePropFromGlobalDict(OPTIONS.info_dict, "cache")
   # The build system has to explicitly request for cache.img.
   if "fs_type" not in image_props:
     return
 
-  print "creating cache.img..."
+  print("creating cache.img...")
 
   # Use a fixed timestamp (01/01/2009) when packaging the image.
   # Bug: 24377993
@@ -315,7 +331,7 @@ def AddImagesToTargetFiles(filename):
   if not OPTIONS.add_missing:
     for n in input_zip.namelist():
       if n.startswith("IMAGES/"):
-        print "target_files appears to already contain images."
+        print("target_files appears to already contain images.")
         sys.exit(1)
 
   try:
@@ -330,23 +346,22 @@ def AddImagesToTargetFiles(filename):
   except KeyError:
     has_oem = False
 
-  OPTIONS.info_dict = common.LoadInfoDict(input_zip)
-  if "selinux_fc" in OPTIONS.info_dict:
-    OPTIONS.info_dict["selinux_fc"] = os.path.join(
-        OPTIONS.input_tmp, "BOOT", "RAMDISK", "file_contexts")
+  OPTIONS.info_dict = common.LoadInfoDict(input_zip, OPTIONS.input_tmp)
 
   common.ZipClose(input_zip)
   output_zip = zipfile.ZipFile(filename, "a",
                                compression=zipfile.ZIP_DEFLATED)
 
+  has_recovery = (OPTIONS.info_dict.get("no_recovery") != "true")
+
   def banner(s):
-    print "\n\n++++ " + s + " ++++\n\n"
+    print("\n\n++++ " + s + " ++++\n\n")
 
   banner("boot")
   prebuilt_path = os.path.join(OPTIONS.input_tmp, "IMAGES", "boot.img")
   boot_image = None
   if os.path.exists(prebuilt_path):
-    print "boot.img already exists in IMAGES/, no need to rebuild..."
+    print("boot.img already exists in IMAGES/, no need to rebuild...")
     if OPTIONS.rebuild_recovery:
       boot_image = common.GetBootableImage(
           "IMAGES/boot.img", "boot.img", OPTIONS.input_tmp, "BOOT")
@@ -356,19 +371,21 @@ def AddImagesToTargetFiles(filename):
     if boot_image:
       boot_image.AddToZip(output_zip)
 
-  banner("recovery")
   recovery_image = None
-  prebuilt_path = os.path.join(OPTIONS.input_tmp, "IMAGES", "recovery.img")
-  if os.path.exists(prebuilt_path):
-    print "recovery.img already exists in IMAGES/, no need to rebuild..."
-    if OPTIONS.rebuild_recovery:
+  if has_recovery:
+    banner("recovery")
+    prebuilt_path = os.path.join(OPTIONS.input_tmp, "IMAGES", "recovery.img")
+    if os.path.exists(prebuilt_path):
+      print("recovery.img already exists in IMAGES/, no need to rebuild...")
+      if OPTIONS.rebuild_recovery:
+        recovery_image = common.GetBootableImage(
+            "IMAGES/recovery.img", "recovery.img", OPTIONS.input_tmp,
+            "RECOVERY")
+    else:
       recovery_image = common.GetBootableImage(
           "IMAGES/recovery.img", "recovery.img", OPTIONS.input_tmp, "RECOVERY")
-  else:
-    recovery_image = common.GetBootableImage(
-        "IMAGES/recovery.img", "recovery.img", OPTIONS.input_tmp, "RECOVERY")
-    if recovery_image:
-      recovery_image.AddToZip(output_zip)
+      if recovery_image:
+        recovery_image.AddToZip(output_zip)
 
   banner("system")
   AddSystem(output_zip, recovery_img=recovery_image, boot_img=boot_image)
@@ -385,6 +402,23 @@ def AddImagesToTargetFiles(filename):
     banner("oem")
     AddOem(output_zip)
 
+
+  # For devices using A/B update, copy over images from RADIO/ to IMAGES/ and
+  # make sure we have all the needed images ready under IMAGES/.
+  ab_partitions = os.path.join(OPTIONS.input_tmp, "META", "ab_partitions.txt")
+  if os.path.exists(ab_partitions):
+    with open(ab_partitions, 'r') as f:
+      lines = f.readlines()
+    for line in lines:
+      img_name = line.strip() + ".img"
+      img_radio_path = os.path.join(OPTIONS.input_tmp, "RADIO", img_name)
+      if os.path.exists(img_radio_path):
+        common.ZipWrite(output_zip, img_radio_path,
+                        os.path.join("IMAGES", img_name))
+
+      # Zip spec says: All slashes MUST be forward slashes.
+      img_path = 'IMAGES/' + img_name
+      assert img_path in output_zip.namelist(), "cannot find " + img_name
 
   common.ZipClose(output_zip)
 
@@ -418,16 +452,16 @@ def main(argv):
     sys.exit(1)
 
   AddImagesToTargetFiles(args[0])
-  print "done."
+  print("done.")
 
 if __name__ == '__main__':
   try:
     common.CloseInheritedPipes()
     main(sys.argv[1:])
   except common.ExternalError as e:
-    print
-    print "   ERROR: %s" % (e,)
-    print
+    print()
+    print("   ERROR: %s" % e)
+    print()
     sys.exit(1)
   finally:
     common.Cleanup()

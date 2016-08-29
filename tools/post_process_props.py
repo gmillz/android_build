@@ -14,7 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os, sys
+import sys
+
+
+def iteritems(obj):
+  if hasattr(obj, 'iteritems'):
+    return obj.iteritems()
+  return obj.items()
+
 
 # Usage: post_process_props.py file.prop [blacklist_key, ...]
 # Blacklisted keys are removed from the property file, if present
@@ -44,16 +51,17 @@ def mangle_default_prop(prop):
   # (this is for eng builds)
   if prop.get("ro.adb.secure") != "1":
     val = prop.get("persist.sys.usb.config")
-    if val == "":
-      val = "adb"
-    else:
-      val = val + ",adb"
-    prop.put("persist.sys.usb.config", val)
+    if "adb" not in val:
+      if val == "":
+        val = "adb"
+      else:
+        val = val + ",adb"
+      prop.put("persist.sys.usb.config", val)
   # UsbDeviceManager expects a value here.  If it doesn't get it, it will
   # default to "adb". That might not the right policy there, but it's better
   # to be explicit.
   if not prop.get("persist.sys.usb.config"):
-    prop.put("persist.sys.usb.config", "none");
+    prop.put("persist.sys.usb.config", "none")
 
 def validate(prop):
   """Validate the properties.
@@ -63,7 +71,7 @@ def validate(prop):
   """
   check_pass = True
   buildprops = prop.to_dict()
-  for key, value in buildprops.iteritems():
+  for key, value in iteritems(buildprops):
     # Check build properties' length.
     if len(key) > PROP_NAME_MAX:
       check_pass = False

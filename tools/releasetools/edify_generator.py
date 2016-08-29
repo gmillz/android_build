@@ -23,6 +23,7 @@ class EdifyGenerator(object):
   def __init__(self, version, info, fstab=None):
     self.script = []
     self.mounts = set()
+    self._required_cache = 0
     self.version = version
     self.info = info
     if fstab is None:
@@ -37,6 +38,11 @@ class EdifyGenerator(object):
     x = EdifyGenerator(self.version, self.info)
     x.mounts = self.mounts
     return x
+
+  @property
+  def required_cache(self):
+    """Return the minimum cache size to apply the update."""
+    return self._required_cache
 
   @staticmethod
   def WordWrap(cmd, linelen=80):
@@ -77,11 +83,20 @@ class EdifyGenerator(object):
       raise ValueError("must specify an OEM property")
     if not value:
       raise ValueError("must specify the OEM value")
-    cmd = ('file_getprop("/oem/oem.prop", "{name}") == "{value}" || '
-           'abort("This package expects the value \\"{value}\\" for '
-           '\\"{name}\\" on the OEM partition; this has value \\"" + '
-           'file_getprop("/oem/oem.prop", "{name}") + "\\".");').format(
-               name=name, value=value)
+    if common.OPTIONS.oem_no_mount:
+      cmd = ('getprop("{name}") == "{value}" || '
+             'abort("E{code}: This package expects the value \\"{value}\\" for '
+             '\\"{name}\\"; this has value \\"" + '
+             'getprop("{name}") + "\\".");').format(
+                 code=common.ErrorCode.OEM_PROP_MISMATCH,
+                 name=name, value=value)
+    else:
+      cmd = ('file_getprop("/oem/oem.prop", "{name}") == "{value}" || '
+             'abort("E{code}: This package expects the value \\"{value}\\" for '
+             '\\"{name}\\" on the OEM partition; this has value \\"" + '
+             'file_getprop("/oem/oem.prop", "{name}") + "\\".");').format(
+                 code=common.ErrorCode.OEM_PROP_MISMATCH,
+                 name=name, value=value)
     self.script.append(cmd)
 
   def AssertSomeFingerprint(self, *fp):
@@ -90,9 +105,9 @@ class EdifyGenerator(object):
       raise ValueError("must specify some fingerprints")
     cmd = (' ||\n    '.join([('getprop("ro.build.fingerprint") == "%s"') % i
                              for i in fp]) +
-           ' ||\n    abort("Package expects build fingerprint of %s; this '
-           'device has " + getprop("ro.build.fingerprint") + ".");') % (
-               " or ".join(fp))
+           ' ||\n    abort("E%d: Package expects build fingerprint of %s; '
+           'this device has " + getprop("ro.build.fingerprint") + ".");') % (
+               common.ErrorCode.FINGERPRINT_MISMATCH, " or ".join(fp))
     self.script.append(cmd)
 
   def AssertSomeThumbprint(self, *fp):
@@ -101,9 +116,9 @@ class EdifyGenerator(object):
       raise ValueError("must specify some thumbprints")
     cmd = (' ||\n    '.join([('getprop("ro.build.thumbprint") == "%s"') % i
                              for i in fp]) +
-           ' ||\n    abort("Package expects build thumbprint of %s; this '
+           ' ||\n    abort("E%d: Package expects build thumbprint of %s; this '
            'device has " + getprop("ro.build.thumbprint") + ".");') % (
-               " or ".join(fp))
+               common.ErrorCode.THUMBPRINT_MISMATCH, " or ".join(fp))
     self.script.append(cmd)
 
   def AssertOlderBuild(self, timestamp, timestamp_text):
@@ -111,18 +126,18 @@ class EdifyGenerator(object):
     the given timestamp."""
     self.script.append(
         ('(!less_than_int(%s, getprop("ro.build.date.utc"))) || '
-         'abort("Can\'t install this package (%s) over newer '
+         'abort("E%d: Can\'t install this package (%s) over newer '
          'build (" + getprop("ro.build.date") + ").");') % (timestamp,
-                                                            timestamp_text))
+             common.ErrorCode.OLDER_BUILD, timestamp_text))
 
   def AssertDevice(self, device):
     """Assert that the device identifier is the given string."""
     cmd = ('assert(' +
-           ' || '.join(['getprop("ro.product.device") == "%s" || getprop("ro.build.product") == "%s"'
-                         % (i, i) for i in device.split(",")]) +
-           ' || abort("This package is for device: %s; ' +
+           ' || '.join(['getprop("ro.product.device") == "%s"' % i
+                         for i in device.split(",")]) +
+           ' || abort("E%d: This package is for device: %s; ' +
            'this device is " + getprop("ro.product.device") + ".");' +
-           ');') % device
+           ');') % (common.ErrorCode.DEVICE_MISMATCH, device)
     self.script.append(cmd)
 
   def AssertSomeBootloader(self, *bootloaders):
@@ -145,7 +160,7 @@ class EdifyGenerator(object):
            ", ".join(["%s" % (b,) for b in basebands]) +
            '; this device has baseband " + getprop("ro.baseband") + ".");' +
            ");")
-    self.script.append(self._WordWrap(cmd))
+    self.script.append(self.WordWrap(cmd))
 
   def RunBackup(self, command):
     self.script.append(('run_program("/tmp/install/bin/backuptool.sh", "%s");' % command))
@@ -174,7 +189,17 @@ class EdifyGenerator(object):
     self.script.append(
         'apply_patch_check("%s"' % (filename,) +
         "".join([', "%s"' % (i,) for i in sha1]) +
-        ') || abort("\\"%s\\" has unexpected contents.");' % (filename,))
+        ') || abort("E%d: \\"%s\\" has unexpected contents.");' % (
+            common.ErrorCode.BAD_PATCH_FILE, filename))
+
+  def Verify(self, filename):
+    """Check that the given file (or MTD reference) has one of the
+    given hashes (encoded in the filename)."""
+    self.script.append(
+        'apply_patch_check("{filename}") && '
+        'ui_print("    Verified.") || '
+        'ui_print("\\"{filename}\\" has unexpected contents.");'.format(
+            filename=filename))
 
   def FileCheck(self, filename, *sha1):
     """Check that the given file (or MTD reference) has one of the
@@ -186,8 +211,11 @@ class EdifyGenerator(object):
   def CacheFreeSpaceCheck(self, amount):
     """Check that there's at least 'amount' space that can be made
     available on /cache."""
-    self.script.append(('apply_patch_space(%d) || abort("Not enough free space '
-                        'on /system to apply patches.");') % (amount,))
+    self._required_cache = max(self._required_cache, amount)
+    self.script.append(('apply_patch_space(%d) || abort("E%d: Not enough free '
+                        'space on /cache to apply patches.");') % (
+                            amount,
+                            common.ErrorCode.INSUFFICIENT_CACHE_SPACE))
 
   def Mount(self, mount_point, mount_options_by_format=""):
     """Mount the partition with the given mount_point.
@@ -214,7 +242,7 @@ class EdifyGenerator(object):
       self.mounts.add(p.mount_point)
 
   def Unmount(self, mount_point):
-    """Unmount the partiiton with the given mount_point."""
+    """Unmount the partition with the given mount_point."""
     if mount_point in self.mounts:
       self.mounts.remove(mount_point)
       self.script.append('unmount("%s");' % (mount_point,))
@@ -243,8 +271,8 @@ class EdifyGenerator(object):
         raise ValueError("Partition %s cannot be tuned\n" % (partition,))
     self.script.append(
         'tune2fs(' + "".join(['"%s", ' % (i,) for i in options]) +
-        '"%s") || abort("Failed to tune partition %s");' % (
-            p.device, partition))
+        '"%s") || abort("E%d: Failed to tune partition %s");' % (
+            p.device, common.ErrorCode.TUNE_PARTITION_FAILURE, partition))
 
   def FormatPartition(self, partition):
     """Format the given partition, specified by its mount point (eg,
@@ -305,8 +333,9 @@ class EdifyGenerator(object):
     cmd = ['apply_patch("%s",\0"%s",\0%s,\0%d'
            % (srcfile, tgtfile, tgtsha1, tgtsize)]
     for i in range(0, len(patchpairs), 2):
-      cmd.append(',\0%s, package_extract_file("%s")' % patchpairs[i:i+2])
-    cmd.append(');')
+      cmd.append(',\0%s,\0package_extract_file("%s")' % patchpairs[i:i+2])
+    cmd.append(') ||\n    abort("E%d: Failed to apply patch to %s");' % (
+        common.ErrorCode.APPLY_PATCH_FAILURE, srcfile))
     cmd = "".join(cmd)
     self.script.append(self.WordWrap(cmd))
 
@@ -322,6 +351,10 @@ class EdifyGenerator(object):
       if partition_type == "MTD":
         self.script.append(
             'write_raw_image(package_extract_file("%(fn)s"), "%(device)s");'
+            % args)
+      elif partition_type == "OSIP":
+        self.script.append(
+            'write_osip_image(package_extract_file("%(fn)s"), "%(device)s");'
             % args)
       elif partition_type == "EMMC":
         if mapfn:
@@ -372,7 +405,7 @@ class EdifyGenerator(object):
     for d, l in symlink_list:
       by_dest.setdefault(d, []).append(l)
 
-    for dest, links in sorted(by_dest.iteritems()):
+    for dest, links in sorted(by_dest.items()):
       cmd = ('symlink("%s", ' % (dest,) +
              ",\0".join(['"' + i + '"' for i in sorted(links)]) + ");")
       self.script.append(self.WordWrap(cmd))

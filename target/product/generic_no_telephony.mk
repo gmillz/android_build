@@ -28,12 +28,12 @@ PRODUCT_PACKAGES := \
     OneTimeInitializer \
     Provision \
     SystemUI \
+    EasterEgg \
     WallpaperCropper
 
 PRODUCT_PACKAGES += \
     clatd \
     clatd.conf \
-    javax.btobex \
     pppd \
     screenrecord
 

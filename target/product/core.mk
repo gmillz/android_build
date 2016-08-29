@@ -22,7 +22,9 @@
 
 PRODUCT_PACKAGES += \
     BasicDreams \
-    Browser \
+    BlockedNumberProvider \
+    BookmarkProvider \
+    Browser2 \
     Calendar \
     CalendarProvider \
     CaptivePortalLogin \
@@ -40,10 +42,12 @@ PRODUCT_PACKAGES += \
     Keyguard \
     Launcher2 \
     ManagedProvisioning \
+    MtpDocumentsProvider \
     PicoTts \
     PacProcessor \
     libpac \
     PrintSpooler \
+    PrintRecommendationService \
     ProxyHandler \
     QuickSearchBox \
     Settings \
