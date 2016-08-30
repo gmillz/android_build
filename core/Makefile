@@ -1,19 +1,5 @@
 # Put some miscellaneous rules here
 
-# Build system colors
-
-ifneq ($(BUILD_WITH_COLORS),0)
-  CL_RED="\033[31m"
-  CL_GRN="\033[32m"
-  CL_YLW="\033[33m"
-  CL_BLU="\033[34m"
-  CL_MAG="\033[35m"
-  CL_CYN="\033[36m"
-  CL_SLIM="\033[38;5;24m"
-  CL_SGRY="\033[38;5;239m"
-  CL_RST="\033[0m"
-endif
-
 # HACK: clear LOCAL_PATH from including last build target before calling
 # intermedites-dir-for
 LOCAL_PATH := $(BUILD_SYSTEM)
@@ -586,7 +572,7 @@ $(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) $(BOOT_S
 	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) $(INTERNAL_MKBOOTIMG_VERSION_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
 	$(BOOT_SIGNER) /boot $@ $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_VERITY_SIGNING_KEY).pk8 $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_VERITY_SIGNING_KEY).x509.pem $@
 	$(hide) $(call assert-max-image-size,$@,$(BOARD_BOOTIMAGE_PARTITION_SIZE))
-	@echo -e ${CL_CYN}"Made boot image: $@"${CL_RST}
+	@echo "Made boot image: $@"
 
 .PHONY: bootimage-nodeps
 bootimage-nodeps: $(MKBOOTIMG) $(BOOT_SIGNER)
@@ -594,7 +580,7 @@ bootimage-nodeps: $(MKBOOTIMG) $(BOOT_SIGNER)
 	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) $(INTERNAL_MKBOOTIMG_VERSION_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $(INSTALLED_BOOTIMAGE_TARGET)
 	$(BOOT_SIGNER) /boot $(INSTALLED_BOOTIMAGE_TARGET) $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_VERITY_SIGNING_KEY).pk8 $(PRODUCTS.$(INTERNAL_PRODUCT).PRODUCT_VERITY_SIGNING_KEY).x509.pem $(INSTALLED_BOOTIMAGE_TARGET)
 	$(hide) $(call assert-max-image-size,$(INSTALLED_BOOTIMAGE_TARGET),$(BOARD_BOOTIMAGE_PARTITION_SIZE))
-	@echo -e ${CL_INS}"Made boot image: $@"${CL_RST}
+	@echo "Made boot image: $@"
 
 else ifndef BOARD_CUSTOM_BOOTIMG_MK
 
@@ -621,14 +607,14 @@ $(INSTALLED_BOOTIMAGE_TARGET): $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_FILES) $(BOOTIM
 	$(call pretty,"Target boot image: $@")
 	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) $(INTERNAL_MKBOOTIMG_VERSION_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $@
 	$(hide) $(call assert-max-image-size,$@,$(BOARD_BOOTIMAGE_PARTITION_SIZE))
-	@echo -e ${CL_CYN}"Made boot image: $@"${CL_RST}
+	@echo "Made boot image: $@"
 
 .PHONY: bootimage-nodeps
 bootimage-nodeps: $(MKBOOTIMG)
 	@echo "make $@: ignoring dependencies"
 	$(hide) $(MKBOOTIMG) $(INTERNAL_BOOTIMAGE_ARGS) $(INTERNAL_MKBOOTIMG_VERSION_ARGS) $(BOARD_MKBOOTIMG_ARGS) --output $(INSTALLED_BOOTIMAGE_TARGET)
 	$(hide) $(call assert-max-image-size,$(INSTALLED_BOOTIMAGE_TARGET),$(BOARD_BOOTIMAGE_PARTITION_SIZE))
-	@echo -e ${CL_INS}"Made boot image: $@"${CL_RST}
+	@echo "Made boot image: $@"
 
   endif # PRODUCT_SUPPORTS_VBOOT
 endif # TARGET_BOOTIMAGE_USE_EXT2 / BOARD_CUSTOM_BOOTIMG_MK
@@ -736,7 +722,7 @@ endif  # TARGET_BUILD_APPS
 $(kernel_notice_file): \
 	    $(BUILD_SYSTEM)/LINUX_KERNEL_COPYING \
 	    | $(ACP)
-	@echo -e ${CL_CYN}"Copying:"${CL_RST}" $@"
+	@echo "Copying:"" $@"
 	$(hide) mkdir -p $(dir $@)
 	$(hide) $(ACP) $< $@
 
@@ -1041,12 +1027,12 @@ $(RECOVERY_INSTALL_OTA_KEYS): $(OTA_PUBLIC_KEYS) $(DUMPKEY_JAR) $(extra_keys)
 	java -jar $(DUMPKEY_JAR) $(PRIVATE_OTA_PUBLIC_KEYS) $(extra_keys) > $@
 
 define build-recoveryramdisk
-  @echo -e ${CL_CYN}"----- Making recovery ramdisk ------"${CL_RST}
+  @echo "----- Making recovery ramdisk ------"
   $(hide) mkdir -p $(TARGET_RECOVERY_OUT)
   $(hide) mkdir -p $(TARGET_RECOVERY_ROOT_OUT)/etc $(TARGET_RECOVERY_ROOT_OUT)/sdcard $(TARGET_RECOVERY_ROOT_OUT)/tmp
-  @echo -e ${CL_CYN}"Copying baseline ramdisk..."${CL_RST}
+  @echo "Copying baseline ramdisk..."
   $(hide) rsync -a --exclude=etc --exclude=sdcard $(TARGET_ROOT_OUT) $(TARGET_RECOVERY_OUT) # "cp -Rf" fails to overwrite broken symlinks on Mac.
-  @echo -e ${CL_CYN}"Modifying ramdisk contents..."${CL_RST}
+  @echo "Modifying ramdisk contents..."
   $(hide) rm -f $(TARGET_RECOVERY_ROOT_OUT)/init*.rc
   $(hide) cp -f $(recovery_initrc) $(TARGET_RECOVERY_ROOT_OUT)/
   $(hide) rm -f $(TARGET_RECOVERY_ROOT_OUT)/sepolicy
@@ -1121,18 +1107,18 @@ $(recovery_uncompressed_ramdisk): $(MKBOOTFS) \
 		$(recovery_fstab) \
 		$(RECOVERY_INSTALL_OTA_KEYS)
 	$(call build-recoveryramdisk)
-	@echo -e ${CL_CYN}"----- Making uncompressed recovery ramdisk ------"${CL_RST}
+	@echo "----- Making uncompressed recovery ramdisk ------"
 	$(hide) $(MKBOOTFS) $(TARGET_RECOVERY_ROOT_OUT) > $@
 
 $(recovery_ramdisk): $(MINIGZIP) \
 		$(recovery_uncompressed_ramdisk)
-	@echo -e ${CL_CYN}"----- Making compressed recovery ramdisk ------"${CL_RST}
+	@echo "----- Making compressed recovery ramdisk ------"
 	$(hide) $(MINIGZIP) < $(recovery_uncompressed_ramdisk) > $@
 
 ifndef BOARD_CUSTOM_BOOTIMG_MK
 $(INSTALLED_RECOVERYIMAGE_TARGET): $(MKBOOTIMG) $(recovery_ramdisk) $(recovery_kernel) \
 		$(RECOVERYIMAGE_EXTRA_DEPS)
-	@echo -e ${CL_CYN}"----- Making recovery image ------"${CL_RST}
+	@echo "----- Making recovery image ------"
 	$(call build-recoveryimage-target, $@)
 endif # BOARD_CUSTOM_BOOTIMG_MK
 
@@ -1293,7 +1279,7 @@ $(RECOVERY_FROM_BOOT_PATCH): $(INSTALLED_RECOVERYIMAGE_TARGET) \
                              $(INSTALLED_BOOTIMAGE_TARGET) \
 			     $(HOST_OUT_EXECUTABLES)/imgdiff \
 	                     $(HOST_OUT_EXECUTABLES)/bsdiff
-	@echo -e ${CL_CYN}"Construct recovery from boot"${CL_RST}
+	@echo "Construct recovery from boot"
 	mkdir -p $(dir $@)
 ifeq ($(TARGET_NOT_USE_GZIP_RECOVERY_RAMDISK),true)
 	PATH=$(HOST_OUT_EXECUTABLES):$$PATH $(HOST_OUT_EXECUTABLES)/bsdiff $(INSTALLED_BOOTIMAGE_TARGET) $(INSTALLED_RECOVERYIMAGE_TARGET) $@
@@ -1307,7 +1293,7 @@ endif
 
 
 $(INSTALLED_SYSTEMIMAGE): $(BUILT_SYSTEMIMAGE) $(RECOVERY_FROM_BOOT_PATCH) | $(ACP)
-	@echo -e ${CL_CYN}"Install system fs image: $@"${CL_RST}
+	@echo "Install system fs image: $@"
 	$(copy-file-to-target)
 	$(hide) $(call assert-max-image-size,$@ $(RECOVERY_FROM_BOOT_PATCH),$(BOARD_SYSTEMIMAGE_PARTITION_SIZE))
 
@@ -1811,7 +1797,7 @@ $(BUILT_TARGET_FILES_PACKAGE): \
 		$(APKCERTS_FILE) \
 		$(HOST_OUT_EXECUTABLES)/fs_config \
 		| $(ACP)
-	@echo -e ${CL_YLW}"Package target files:"${CL_RST}" $@"
+	@echo "Package target files:"" $@"
 	$(hide) rm -rf $@ $(zip_root)
 	$(hide) mkdir -p $(dir $@) $(zip_root)
 ifneq (,$(INSTALLED_RECOVERYIMAGE_TARGET)$(filter true,$(BOARD_USES_RECOVERY_AS_BOOT)))
@@ -2112,7 +2098,7 @@ ifneq ($(BLOCK_BASED_OTA),false)
 endif
 
 $(INTERNAL_OTA_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE)
-	@echo -e ${CL_YLW}"Package OTA:"${CL_RST}" $@"
+	@echo -e "Package OTA: $@"
 	$(hide) PATH=$(foreach p,$(INTERNAL_USERIMAGES_BINARY_PATHS),$(p):)$$PATH MKBOOTIMG=$(MKBOOTIMG) \
 	   $(OTA_FROM_TARGET_SCRIPT) -v \
 	   $(block_based) \
@@ -2130,18 +2116,18 @@ otapackage: $(INTERNAL_OTA_PACKAGE_TARGET)
 bacon: otapackage
 	$(hide) ln -f $(INTERNAL_OTA_PACKAGE_TARGET) $(SLIM_TARGET_PACKAGE)
 	$(hide) $(MD5SUM) $(SLIM_TARGET_PACKAGE) > $(SLIM_TARGET_PACKAGE).md5sum
-	@echo -e ${CL_SLIM}"                              _______________________________________________  "${CL_SLIM}
-	@echo -e ${CL_SLIM}"                             /                              www.slimroms.org | "${CL_SLIM}
-	@echo -e ${CL_SLIM}"                            /   _____________________________________________| "${CL_SLIM}
-	@echo -e ${CL_SLIM}"                           /   /                                               "${CL_SLIM}
-	@echo -e ${CL_SLIM}"                          /   /  _  _      "${CL_SGRY}" ______                             "${CL_SLIM}
-	@echo -e ${CL_SLIM}"                         /   /  | |(_)     "${CL_SGRY}"(_____ \                            "${CL_SLIM}
-	@echo -e ${CL_SLIM}"                        /   /   | | _ _____ "${CL_SGRY}"_____) )___  _____  ___            "${CL_SLIM}
-	@echo -e ${CL_SLIM}"  _____________________/   /    | || |     |"${CL_SGRY}"  __  // _ \|     |/___)           "${CL_SLIM}
-	@echo -e ${CL_SLIM}" |                        /     | || | | | |"${CL_SGRY}" |  \ \ |_| | | | |___ |           "${CL_SLIM}
-	@echo -e ${CL_SLIM}" |_______________________/       \_)_|_|_|_|"${CL_SGRY}"_|   |_\___/|_|_|_(___/            "${CL_SLIM}
-	@echo -e ${CL_SLIM}" "${CL_SLIM}
-	@echo -e ${CL_CYN}"Package Complete: $(SLIM_TARGET_PACKAGE)"${CL_RST}
+	@echo "                              _______________________________________________  "
+	@echo "                             /                              www.slimroms.org | "
+	@echo "                            /   _____________________________________________| "
+	@echo "                           /   /                                               "
+	@echo "                          /   /  _  _      "" ______                             "
+	@echo "                         /   /  | |(_)     ""(_____ \                            "
+	@echo "                        /   /   | | _ _____ ""_____) )___  _____  ___            "
+	@echo "  _____________________/   /    | || |     |""  __  // _ \|     |/___)           "
+	@echo " |                        /     | || | | | |"" |  \ \ |_| | | | |___ |           "
+	@echo " |_______________________/       \_)_|_|_|_|""_|   |_\___/|_|_|_(___/            "
+	@echo " "
+	@echo "Package Complete: $(SLIM_TARGET_PACKAGE)"
 
 bootzip: bootimage
 	$(BOOT_ZIP_FROM_IMAGE_SCRIPT) \
@@ -2164,7 +2150,7 @@ $(INTERNAL_FACTORY_PACKAGE_TARGET): extensions := $(TARGET_RELEASETOOLS_EXTENSIO
 endif
 
 $(INTERNAL_FACTORY_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE) $(DISTTOOLS)
-	@echo -e ${CL_YLW}"Package:"${CL_RST}" $@"
+	@echo "Package:"" $@"
 	if [ -z $(TARGET_RELEASETOOL_FACTORY_FROM_TARGET_SCRIPT) ]; then \
           echo "Error: Factory script is not defined by target"; \
           exit 1; \
@@ -2196,7 +2182,7 @@ else
 endif
 
 $(INTERNAL_UPDATE_PACKAGE_TARGET): $(BUILT_TARGET_FILES_PACKAGE)
-	@echo -e ${CL_YLW}"Package:"${CL_RST}" $@"
+	@echo "Package:"" $@"
 	$(hide) PATH=$(foreach p,$(INTERNAL_USERIMAGES_BINARY_PATHS),$(p):)$$PATH MKBOOTIMG=$(MKBOOTIMG) \
 	   $(IMG_FROM_TARGET_SCRIPT) -v \
 	   -p $(HOST_OUT) \
@@ -2238,7 +2224,7 @@ name := $(name)-apps-$(FILE_NAME_TAG)
 
 APPS_ZIP := $(PRODUCT_OUT)/$(name).zip
 $(APPS_ZIP): $(INSTALLED_SYSTEMIMAGE)
-	@echo -e ${CL_YLW}"Package apps:"${CL_RST}" $@"
+	@echo "Package apps: $@"
 	$(hide) rm -rf $@
 	$(hide) mkdir -p $(dir $@)
 	$(hide) apps_to_zip=`find $(TARGET_OUT_APPS) $(TARGET_OUT_APPS_PRIVILEGED) -mindepth 2 -maxdepth 3 -name "*.apk"`; \
@@ -2305,7 +2291,7 @@ name := $(TARGET_PRODUCT)-emulator-$(FILE_NAME_TAG)
 INTERNAL_EMULATOR_PACKAGE_TARGET := $(PRODUCT_OUT)/$(name).zip
 
 $(INTERNAL_EMULATOR_PACKAGE_TARGET): $(INTERNAL_EMULATOR_PACKAGE_FILES)
-	@echo -e ${CL_YLW}"Package:"${CL_RST}" $@"
+	@echo "Package:"" $@"
 	$(hide) zip -qjX $@ $(INTERNAL_EMULATOR_PACKAGE_FILES)
 
 endif
